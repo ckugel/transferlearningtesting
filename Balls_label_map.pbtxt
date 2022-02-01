@@ -1,0 +1,10 @@
+item {
+    name: "cargo_blue",
+    id: 1,
+    display_name: "cargo_blue"
+}
+item {
+    name: "cargo_red",
+    id: 2,
+    display_name: "cargo_red"
+}
