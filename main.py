@@ -18,6 +18,7 @@ class MugDetection:
         self.capture_index = capture_index
         self.model = self.load_model(model_name)
         self.classes = self.model.names
+        print(self.classes)
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print("Using Device: ", self.device)
 
@@ -35,7 +36,7 @@ class MugDetection:
         :return: Trained Pytorch model.
         """
         if model_name:
-            model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_name, force_reload=True)
+            model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_name, force_reload=False)
         else:
             model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
         return model
@@ -71,11 +72,14 @@ class MugDetection:
         n = len(labels)
         x_shape, y_shape = frame.shape[1], frame.shape[0]
         for i in range(n):
+            print("labels: ", labels)
+            print("cord: ", cord)
             row = cord[i]
             # the number is the confidence score
             if row[4] >= 0.95:
                 x1, y1, x2, y2 = int(row[0] * x_shape), int(row[1] * y_shape), int(row[2] * x_shape), int(
                     row[3] * y_shape)
+                print("row: ", row)
                 bgr = (0, 255, 0)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), bgr, 2)
                 cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.9, bgr, 2)
