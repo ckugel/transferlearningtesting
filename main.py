@@ -1,121 +1,82 @@
-import torch
-import numpy as np
 import cv2
-from time import time
+import time
+import numpy as np
 
+class_names = [
 
-class MugDetection:
-    """
-    Class implements Yolo5 model to make inferences on a youtube video using Opencv2.
-    """
+]
 
-    def __init__(self, capture_index, model_name):
-        """
-        Initializes the class with youtube url and output file.
-        :param url: Has to be as youtube URL,on which prediction is made.
-        :param out_file: A valid output file name.
-        """
-        self.capture_index = capture_index
-        self.model = self.load_model(model_name)
-        self.classes = self.model.names
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        print("Using Device: ", self.device)
+print(class_names)
 
-    def get_video_capture(self):
-        """
-        Creates a new video streaming object to extract video frame by frame to make prediction on.
-        :return: opencv2 video capture object, with lowest quality frame available for video.
-        """
+# Get a different colors for each of the classes
+colors = np.random.uniform(0, 255, size=(len(class_names), 3))
 
-        return cv2.VideoCapture(self.capture_index)
+# Load the DNN model
+model = cv2.dnn.readNet(model='frozen_inference_graph.pb',
+                        config='Balls_label_map.pbtxt', framework='TensorFlow')
 
-    def load_model(self, model_name):
-        """
-        Loads Yolo5 model from pytorch hub.
-        :return: Trained Pytorch model.
-        """
-        if model_name:
-            model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_name, force_reload=True)
-        else:
-            model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True)
-        return model
+# Set backend and target to CUDA to use GPU
+model.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+model.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 
-    def score_frame(self, frame):
-        """
-        Takes a single frame as input, and scores the frame using yolo5 model.
-        :param frame: input frame in numpy/list/tuple format.
-        :return: Labels and Coordinates of objects detected by model in the frame.
-        """
-        self.model.to(self.device)
-        frame = [frame]
-        results = self.model(frame)
-        labels, cord = results.xyxyn[0][:, -1], results.xyxyn[0][:, :-1]
-        return labels, cord
+# Webcam
+cap = cv2.VideoCapture(0)
 
-    def class_to_label(self, x):
-        """
-        For a given label value, return corresponding string label.
-        :param x: numeric label
-        :return: corresponding string label
-        """
-        return self.classes[int(x)]
+min_confidence_score = 0.6
 
-    def plot_boxes(self, results, frame):
-        """
-        Takes a frame and its results as input, and plots the bounding boxes and label on to the frame.
-        :param results: contains labels and coordinates predicted by model on the given frame.
-        :param frame: Frame which has been scored.
-        :return: Frame with bounding boxes and labels ploted on it.
-        """
-        labels, cord = results
-        n = len(labels)
-        x_shape, y_shape = frame.shape[1], frame.shape[0]
-        for i in range(n):
-            row = cord[i]
-            # the number is the confidence score
-            if row[4] >= 0.95:
-                x1, y1, x2, y2 = int(row[0] * x_shape), int(row[1] * y_shape), int(row[2] * x_shape), int(
-                    row[3] * y_shape)
-                bgr = (0, 255, 0)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), bgr, 2)
-                cv2.putText(frame, self.class_to_label(labels[i]), (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.9, bgr, 2)
+while cap.isOpened():
 
-        return frame
+    # Read in the image
+    success, img = cap.read()
 
-    def __call__(self):
-        """
-        This function is called when class is executed, it runs the loop to read the video frame by frame,
-        and write the output into a new file.
-        :return: void
-        """
-        cap = self.get_video_capture()
-        assert cap.isOpened()
+    imgHeight, imgWidth, channels = img.shape
 
-        while True:
+    # Create blob from image
+    blob = cv2.dnn.blobFromImage(img, size=(300, 300), mean=(104, 117, 123), swapRB=True)
 
-            ret, frame = cap.read()
-            assert ret
+    # start time to calculate FPS
+    start = time.time()
 
-            frame = cv2.resize(frame, (416, 416))
+    # Set input to the model
+    model.setInput(blob)
 
-            start_time = time()
-            results = self.score_frame(frame)
-            frame = self.plot_boxes(results, frame)
+    # Make forward pass in model
+    output = model.forward()
 
-            end_time = time()
-            fps = 1 / np.round(end_time - start_time, 2)
-            # print(f"Frames Per Second : {fps}")
+    # End time
+    end = time.time()
 
-            cv2.putText(frame, f'FPS: {int(fps)}', (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 2)
+    # calculate the FPS for current frame detection
+    fps = 1 / (end - start)
 
-            cv2.imshow('YOLOv5 Detection', frame)
+    # Run over each of the detections
+    for detection in output[0, 0, :, :]:
 
-            if cv2.waitKey(5) & 0xFF == 27:
-                break
+        confidence = detection[2]
 
-        cap.release()
+        if confidence > min_confidence_score:
+            class_id = detection[1]
 
+            class_name = class_names[int(class_id) - 1]
+            color = colors[int(class_id)]
 
-# Create a new object and execute.
-detector = MugDetection(capture_index=0, model_name='best.pt')
-detector()
+            bboxX = detection[3] * imgWidth
+            bboxY = detection[4] * imgHeight
+
+            bboxWidth = detection[5] * imgWidth
+            bboxHeight = detection[6] * imgHeight
+
+            cv2.rectangle(img, (int(bboxX), int(bboxY)), (int(bboxWidth), int(bboxHeight)), color, thickness=2)
+
+            cv2.putText(img, class_name, (int(bboxX), int(bboxY - 5)), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+    # Show FPS
+    cv2.putText(img, f"{fps:.2f} FPS", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+    cv2.imshow('image', img)
+
+    if cv2.waitKey(10) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
